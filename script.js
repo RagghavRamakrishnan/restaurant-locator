@@ -1,4 +1,4 @@
-const randomFoodImages = [
+const restaurantImages = [
   'https://img.etimg.com/photo/96508902/96508902.jpg',
 	'https://upload.wikimedia.org/wikipedia/commons/4/44/Cuisine_Trois_%C3%A9toiles.jpg',
 	'https://sandinmysuitcase.com/wp-content/uploads/2020/04/Popular-Indian-Cuisine.jpg',
@@ -17,122 +17,7 @@ const randomFoodImages = [
   ];
 
 
-let pastLocations = JSON.parse(localStorage.getItem('pastLocations')) || [];
-
-
-async function fetchRestaurantsNearUser(position) {
-  const userLatitude = position.coords.latitude;
-  const userLongitude = position.coords.longitude;
-
-  const url = `https://travel-advisor.p.rapidapi.com/restaurants/list-by-latlng?latitude=${userLatitude}&longitude=${userLongitude}&limit=30&currency=USD&distance=2&open_now=false&lunit=km&lang=en_US`;
-  const options = {
-    method: 'GET',
-    headers: {
-      'X-RapidAPI-Key': '4aa9213becmshcb7371b50012778p17d9a8jsnc30611bc33fe',
-      'X-RapidAPI-Host': 'travel-advisor.p.rapidapi.com'
-    }
-  };
-
-  try {
-    const response = await fetch(url, options);
-    const data = await response.json();
-    restaurants = data.data;
-
-    displayRestaurants(restaurants);
-    updatePastLocations(userLatitude, userLongitude); 
-    initMap(userLatitude, userLongitude); 
-  } catch (error) {
-    console.error('Error fetching restaurants:', error);
-  }
-}
-
-async function updatePastLocations(latitude, longitude) {
-  const address = await getAddressFromCoordinates(latitude, longitude);
-  pastLocations.push(address);
-  localStorage.setItem('pastLocations', JSON.stringify(pastLocations));
-  displayPastLocations();
-}
-
-async function getAddressFromCoordinates(latitude, longitude) {
-  const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&zoom=18&addressdetails=1`;
-  const options = {
-    method: 'GET',
-    headers: {
-      'User-Agent': 'Mozilla/5.0' 
-    }
-  };
-
-  try {
-    const response = await fetch(url, options);
-    const data = await response.json();
-    const address = data.display_name;
-    return address;
-  } catch (error) {
-    console.error('Error fetching address:', error);
-    return '';
-  }
-}
-
-
-
-function displayPastLocations() {
-  const pastLocationsList = document.getElementById('past-locations-list');
-  pastLocationsList.innerHTML = '';
-
-  if (pastLocations.length === 0) {
-    const noLocationItem = document.createElement('li');
-    noLocationItem.textContent = 'No past locations available.';
-    pastLocationsList.appendChild(noLocationItem);
-    return;
-  }
-
-  const startIndex = Math.max(0, pastLocations.length - 10); 
-
-  for (let i = startIndex; i < pastLocations.length; i++) {
-    const location = pastLocations[i];
-    const locationItem = document.createElement('li');
-    locationItem.textContent = `${location}`;
-    pastLocationsList.appendChild(locationItem);
-  }
-}
-
-
-
-function displayRestaurants(restaurantsData) {
-  const restaurantInfoDiv = document.getElementById('restaurant-info');
-  restaurantInfoDiv.innerHTML = '';
-
-  for (const restaurant of restaurantsData) {
-    const restaurantCard = document.createElement('div');
-    restaurantCard.classList.add('restaurant-card');
-
-    const restaurantImg = document.createElement('img');
-    restaurantImg.src = restaurant.photo?.images?.small?.url || getRandomFoodImage();
-    restaurantImg.alt = restaurant.name;
-
-    const restaurantCardContent = document.createElement('div');
-    restaurantCardContent.classList.add('restaurant-card-content');
-
-    const restaurantName = document.createElement('h3');
-    restaurantName.textContent = restaurant.name;
-
-    const restaurantRating = document.createElement('p');
-    restaurantRating.textContent = `Rating: ${restaurant.rating}`;
-
-    restaurantCardContent.appendChild(restaurantName);
-    restaurantCardContent.appendChild(restaurantRating);
-
-    restaurantCard.appendChild(restaurantImg);
-    restaurantCard.appendChild(restaurantCardContent);
-
-    restaurantInfoDiv.appendChild(restaurantCard);
-  }
-}
-
-function getRandomFoodImage() {
-  const randomIndex = Math.floor(Math.random() * randomFoodImages.length);
-  return randomFoodImages[randomIndex];
-}
+let prevLocations = JSON.parse(localStorage.getItem('pastLocations')) || [];
 
 function initMap(latitude, longitude) {
   const map = L.map('map').setView([latitude, longitude], 13);
@@ -161,40 +46,22 @@ function initMap(latitude, longitude) {
 
   map.fitBounds(bounds);
 
-  addMapClickListener(map);
+  addMapMarkers(map);
 }
 
-function addMapClickListener(map) {
-  map.on('click', async function (event) {
-    const latitude = event.latlng.lat;
-    const longitude = event.latlng.lng;
 
-    await fetchRestaurantsNearLocation(latitude, longitude);
-
-    map.eachLayer(function (layer) {
-      if (layer instanceof L.Marker) {
-        map.removeLayer(layer);
-      }
+function UserLocation() {
+  if ('geolocation' in navigator) {
+    navigator.geolocation.getCurrentPosition(getNearbyRestaurants, error => {
+      console.error('Error getting user location:', error);
     });
-
-    displayRestaurantMarkers(map, restaurants);
-  });
-}
-
-function displayRestaurantMarkers(map, restaurantsData) {
-  for (const restaurant of restaurantsData) {
-    if (restaurant.latitude && restaurant.longitude) {
-      const restaurantLatitude = restaurant.latitude;
-      const restaurantLongitude = restaurant.longitude;
-
-      L.marker([restaurantLatitude, restaurantLongitude])
-        .addTo(map)
-        .bindPopup(restaurant.name);
-    }
+  } else {
+    console.error('Geolocation is not available on this device.');
   }
 }
 
-async function fetchRestaurantsNearLocation(latitude, longitude) {
+
+async function getRestaurants(latitude, longitude) {
   const url = `https://travel-advisor.p.rapidapi.com/restaurants/list-by-latlng?latitude=${latitude}&longitude=${longitude}&limit=30&currency=USD&distance=2&open_now=false&lunit=km&lang=en_US`;
   const options = {
     method: 'GET',
@@ -208,21 +75,159 @@ async function fetchRestaurantsNearLocation(latitude, longitude) {
     const response = await fetch(url, options);
     const data = await response.json();
     restaurants = data.data;
-    displayRestaurants(restaurants);
-    updatePastLocations(latitude, longitude); 
+    showRestaurants(restaurants);
+    storePastLocations(latitude, longitude); 
   } catch (error) {
     console.error('Error fetching restaurants:', error);
   }
 }
 
-function getUserLocation() {
-  if ('geolocation' in navigator) {
-    navigator.geolocation.getCurrentPosition(fetchRestaurantsNearUser, error => {
-      console.error('Error getting user location:', error);
-    });
-  } else {
-    console.error('Geolocation is not available on this device.');
+
+function getRestaurantImage() {
+  const randomIndex = Math.floor(Math.random() * restaurantImages.length);
+  return restaurantImages[randomIndex];
+}
+
+async function getNearbyRestaurants(position) {
+  const userLatitude = position.coords.latitude;
+  const userLongitude = position.coords.longitude;
+
+  const url = `https://travel-advisor.p.rapidapi.com/restaurants/list-by-latlng?latitude=${userLatitude}&longitude=${userLongitude}&limit=30&currency=USD&distance=2&open_now=false&lunit=km&lang=en_US`;
+  const options = {
+    method: 'GET',
+    headers: {
+      'X-RapidAPI-Key': '4aa9213becmshcb7371b50012778p17d9a8jsnc30611bc33fe',
+      'X-RapidAPI-Host': 'travel-advisor.p.rapidapi.com'
+    }
+  };
+
+  try {
+    const response = await fetch(url, options);
+    const data = await response.json();
+    restaurants = data.data;
+
+    showRestaurants(restaurants);
+    storePastLocations(userLatitude, userLongitude); 
+    initMap(userLatitude, userLongitude); 
+  } catch (error) {
+    console.error('Error fetching restaurants:', error);
   }
 }
 
-getUserLocation();
+
+
+function showRestaurants(restaurantsData) {
+  const restaurantInfoDiv = document.getElementById('restaurant-info');
+  restaurantInfoDiv.innerHTML = '';
+
+  for (const restaurant of restaurantsData) {
+    const restaurantCard = document.createElement('div');
+    restaurantCard.classList.add('restaurant-card');
+
+    const restaurantImg = document.createElement('img');
+    restaurantImg.src = restaurant.photo?.images?.small?.url || getRestaurantImage();
+    restaurantImg.alt = restaurant.name;
+
+    const restaurantCardContent = document.createElement('div');
+    restaurantCardContent.classList.add('restaurant-card-content');
+
+    const restaurantName = document.createElement('h3');
+    restaurantName.textContent = restaurant.name;
+
+    const restaurantRating = document.createElement('p');
+    restaurantRating.textContent = `Rating: ${restaurant.rating}`;
+
+    restaurantCardContent.appendChild(restaurantName);
+    restaurantCardContent.appendChild(restaurantRating);
+
+    restaurantCard.appendChild(restaurantImg);
+    restaurantCard.appendChild(restaurantCardContent);
+
+    restaurantInfoDiv.appendChild(restaurantCard);
+  }
+}
+
+
+function addMapMarkers(map) {
+  map.on('click', async function (event) {
+    const latitude = event.latlng.lat;
+    const longitude = event.latlng.lng;
+
+    await getRestaurants(latitude, longitude);
+
+    map.eachLayer(function (layer) {
+      if (layer instanceof L.Marker) {
+        map.removeLayer(layer);
+      }
+    });
+
+    RestaurantPoints(map, restaurants);
+  });
+}
+
+
+function RestaurantPoints(map, restaurantsData) {
+  for (const restaurant of restaurantsData) {
+    if (restaurant.latitude && restaurant.longitude) {
+      const restaurantLatitude = restaurant.latitude;
+      const restaurantLongitude = restaurant.longitude;
+
+      L.marker([restaurantLatitude, restaurantLongitude])
+        .addTo(map)
+        .bindPopup(restaurant.name);
+    }
+  }
+}
+
+async function storePastLocations(latitude, longitude) {
+  const address = await getAddressFromCoordinates(latitude, longitude);
+  prevLocations.push(address);
+  localStorage.setItem('pastLocations', JSON.stringify(prevLocations));
+  showPrevLocations();
+}
+
+async function getAddressFromCoordinates(latitude, longitude) {
+  const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&zoom=18&addressdetails=1`;
+  const options = {
+    method: 'GET',
+    headers: {
+      'User-Agent': 'Mozilla/5.0' 
+    }
+  };
+
+  try {
+    const response = await fetch(url, options);
+    const data = await response.json();
+    const address = data.display_name;
+    return address;
+  } catch (error) {
+    console.error('Error fetching address:', error);
+    return '';
+  }
+}
+
+
+
+function showPrevLocations() {
+  const pastLocationsList = document.getElementById('past-locations-list');
+  pastLocationsList.innerHTML = '';
+
+  if (prevLocations.length === 0) {
+    const noLocationItem = document.createElement('li');
+    noLocationItem.textContent = 'No past locations available.';
+    pastLocationsList.appendChild(noLocationItem);
+    return;
+  }
+
+  const startIndex = Math.max(0, prevLocations.length - 10); 
+
+  for (let i = startIndex; i < prevLocations.length; i++) {
+    const location = prevLocations[i];
+    const locationItem = document.createElement('li');
+    locationItem.textContent = `${location}`;
+    pastLocationsList.appendChild(locationItem);
+  }
+}
+
+
+UserLocation();
